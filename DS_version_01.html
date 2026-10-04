@@ -1,0 +1,1204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Python-Based Garden Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=JetBrains+Mono:wght@400;500;700&display=swap");
+      body {
+        font-family: "VT323", monospace;
+        font-size: 20px;
+        line-height: 1.1;
+        background-color: #6f9db5;
+        background-image: linear-gradient(#6f9db5 0%, #9fc0c8 55%, #c5d9d2 100%);
+        background-attachment: fixed;
+        color: #e3ead8;
+        text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6);
+      }
+      body.min-h-screen { padding-bottom: 88px !important; }
+      .code-font { font-family: "JetBrains Mono", monospace; }
+      /* Everything is square and blocky */
+      [class*="rounded"] { border-radius: 0 !important; }
+      /* Readable pixel text sizes */
+      .text-xs { font-size: 1.05rem !important; line-height: 1.1 !important; }
+      .text-sm { font-size: 1.15rem !important; line-height: 1.1 !important; }
+      .text-lg { font-size: 1.35rem !important; }
+      h1 {
+        font-family: "Press Start 2P", monospace;
+        font-size: 1rem !important;
+        line-height: 1.6 !important;
+        color: #d9c27a !important;
+      }
+      h2, h3 {
+        font-family: "Press Start 2P", monospace;
+        font-size: 0.62rem !important;
+        line-height: 1.7 !important;
+      }
+      .text-\[10px\] {
+        font-family: "Press Start 2P", monospace;
+        font-size: 0.5rem !important;
+      }
+      /* Inventory-style panels */
+      .glass-panel {
+        background: linear-gradient(#3e5a3a, #2e452e);
+        border: 4px solid #16241a;
+        box-shadow: inset 0 0 0 2px #5d7c53, 4px 4px 0 rgba(0, 0, 0, 0.4);
+        backdrop-filter: none;
+      }
+      .glass-panel .glass-panel { background: #243824; box-shadow: inset 0 0 0 2px #4a6644; }
+      /* Item-slot buttons */
+      button:not(.tile) {
+        border: 3px solid #12201a !important;
+        box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.3), inset -2px -2px 0 rgba(0, 0, 0, 0.35);
+        font-family: "Press Start 2P", monospace;
+        font-size: 0.55rem !important;
+        line-height: 1.5;
+        padding-top: 0.6rem;
+        padding-bottom: 0.6rem;
+      }
+      button:not(.tile):active { transform: translateY(2px); }
+      button:disabled { cursor: not-allowed; }
+      .slot { background: linear-gradient(#4f6e48, #3a553a); color: #e3ead8; }
+      .slot-active {
+        background: linear-gradient(#c9a95a, #a98a3c) !important;
+        color: #2e2208 !important;
+        text-shadow: none;
+      }
+      /* Health-bar style meters */
+      div[class*="h-2.5"], div[class*="h-1.5"] {
+        border: 2px solid #000;
+        background: #14201a !important;
+      }
+      select, textarea, #output-console {
+        border: 3px solid #12201a !important;
+        background: #0e1a12 !important;
+        color: #dfe8d6;
+        text-shadow: none;
+      }
+      select { font-family: "VT323", monospace; font-size: 1.1rem; }
+      button.mini:not(.tile) { padding: 0.2rem 0.4rem; font-size: 0.45rem !important; }
+      /* Dirt and grass blocks */
+      .tile {
+        border: 3px solid #2a1b0f;
+        background-color: #6e4a28;
+        background-image:
+          repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.14) 0 7px, transparent 7px 14px),
+          repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.14) 0 7px, transparent 7px 14px);
+      }
+      .tile > span:first-child { position: relative; z-index: 1; }
+      .tile-empty:hover { filter: brightness(1.2); }
+      .tile-planted::before, .tile-ready::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 22%;
+        background: #3f7a35;
+        border-bottom: 4px solid #2a5726;
+      }
+      .tile-ready { box-shadow: inset 0 0 0 3px #c9a84a; }
+      .badge { font-size: 0.95rem; }
+      /* Soften every bright colour on the page */
+      body > header, body > main { filter: saturate(0.78) brightness(0.93); }
+      /* Forest hills in the distance */
+      .hills {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 56px;
+        height: 200px;
+        z-index: -2;
+        pointer-events: none;
+        background:
+          radial-gradient(ellipse 45% 100% at 15% 100%, #3d6638 0 99%, transparent 100%),
+          radial-gradient(ellipse 55% 80% at 60% 100%, #335a33 0 99%, transparent 100%),
+          radial-gradient(ellipse 40% 90% at 95% 100%, #3a6236 0 99%, transparent 100%);
+      }
+      /* Ground along the bottom of the screen */
+      .ground {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 56px;
+        z-index: -1;
+        pointer-events: none;
+        border-top: 12px solid #3f7a35;
+        box-shadow: inset 0 4px 0 #5a9a48;
+        background-color: #624224;
+        background-image:
+          repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.12) 0 16px, transparent 16px 32px),
+          repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.12) 0 16px, transparent 16px 32px);
+      }
+    </style>
+  </head>
+  <body class="min-h-screen p-4 flex flex-col justify-between overflow-x-hidden">
+    <header
+      class="w-full max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4 glass-panel p-3"
+    >
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl font-extrabold tracking-tight text-emerald-100">
+            Python-Based Garden Simulator
+          </h1>
+          <span
+            id="version-badge"
+            class="text-[10px] font-bold uppercase tracking-widest text-emerald-400/90 bg-emerald-950/50 border border-emerald-800/60 px-2 py-0.5 rounded-full"
+          ></span>
+        </div>
+        <p class="text-xs text-emerald-300/80 font-medium">SDG 2, 13, 15</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="glass-panel px-4 py-2 rounded-xl flex flex-col items-end">
+          <span class="text-[10px] text-emerald-400 uppercase tracking-widest font-bold">SEASON</span>
+          <span class="text-lg font-extrabold text-amber-200" id="season-display">Spring</span>
+          <span class="text-[10px] text-emerald-300/80" id="clock-display">06:00</span>
+        </div>
+        <div class="glass-panel px-4 py-2 rounded-xl flex flex-col items-end">
+          <span class="text-[10px] text-emerald-400 uppercase tracking-widest font-bold">DAY</span>
+          <span class="text-lg font-extrabold text-white" id="day-counter">1</span>
+          <div class="w-16 h-1.5 mt-1" title="Progress through the day">
+            <div id="day-bar" class="bg-amber-400 h-full" style="width: 25%"></div>
+          </div>
+        </div>
+        <div class="glass-panel px-4 py-2 rounded-xl flex flex-col items-end">
+          <span class="text-[10px] text-emerald-400 uppercase tracking-widest font-bold">SCORE</span>
+          <span class="text-lg font-extrabold text-emerald-300" id="stewardship-counter">0%</span>
+        </div>
+      </div>
+    </header>
+    <main class="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-4 flex-grow">
+      <!-- LEFT: RESOURCES -->
+      <section id="resources-section" class="lg:col-span-3 glass-panel rounded-2xl p-4">
+        <h2
+          class="text-base font-bold text-emerald-200 border-b border-[#43533c]/30 pb-2 mb-4 flex items-center gap-2"
+        >
+          <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i>
+          Resource Storage
+        </h2>
+        <div class="space-y-4">
+          <div>
+            <div class="flex justify-between text-xs font-semibold">
+              <span class="flex items-center gap-1.5 text-blue-300">Water Reserves <button id="upgrade-water" onclick="upgradeResource('water')" class="slot mini">Lv1 ▲</button></span>
+              <span id="water-text">0 / 200 L</span>
+            </div>
+            <div class="w-full bg-[#1b2219] h-2.5 rounded-full overflow-hidden">
+              <div id="water-bar" class="bg-gradient-to-r from-blue-500 to-cyan-400 h-full rounded-full" style="width: 0%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs font-semibold">
+              <span class="flex items-center gap-1.5 text-emerald-300">Seed Inventory <button id="upgrade-seeds" onclick="upgradeResource('seeds')" class="slot mini">Lv1 ▲</button></span>
+              <span id="seeds-text">0 / 100</span>
+            </div>
+            <div class="w-full bg-[#1b2219] h-2.5 rounded-full overflow-hidden">
+              <div id="seeds-bar" class="bg-gradient-to-r from-emerald-500 to-lime-400 h-full rounded-full" style="width: 0%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs font-semibold">
+              <span class="flex items-center gap-1.5 text-amber-300">Solar Energy <button id="upgrade-energy" onclick="upgradeResource('energy')" class="slot mini">Lv1 ▲</button></span>
+              <span id="energy-text">0 / 120 Wh</span>
+            </div>
+            <div class="w-full bg-[#1b2219] h-2.5 rounded-full overflow-hidden">
+              <div id="energy-bar" class="bg-gradient-to-r from-amber-500 to-yellow-300 h-full rounded-full" style="width: 0%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs font-semibold">
+              <span class="flex items-center gap-1.5 text-rose-300">Community Hope <button id="upgrade-hope" onclick="upgradeResource('hope')" class="slot mini">Lv1 ▲</button></span>
+              <span id="hope-text">0 / 100</span>
+            </div>
+            <div class="w-full bg-[#1b2219] h-2.5 rounded-full overflow-hidden">
+              <div id="hope-bar" class="bg-gradient-to-r from-rose-500 to-pink-400 h-full rounded-full" style="width: 0%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs font-semibold">
+              <span class="flex items-center gap-1.5 text-yellow-200">Coins / Dues</span>
+              <span id="coins-text" class="text-yellow-200">0 Coins</span>
+            </div>
+          </div>
+        </div>
+        <div class="mt-6 pt-4 border-t border-[#43533c]/30">
+          <h3 class="text-sm font-bold text-emerald-200 mb-2">🧺 Harvest Storage</h3>
+          <div id="fruit-storage" class="space-y-1 text-xs"></div>
+          <p class="text-[11px] text-emerald-300/80 mt-2">
+            Seeds recovered: <span id="seeds-recovered">0</span>
+          </p>
+        </div>
+      </section>
+
+      <!-- CENTER -->
+      <section class="lg:col-span-6 flex flex-col gap-4">
+        <div class="flex bg-[#192218] p-1.5 rounded-xl border border-emerald-800/40 w-fit">
+          <button
+            onclick="switchTab('game')"
+            id="tab-game"
+            class="px-4 py-1.5 rounded-lg text-xs font-bold bg-[#283623] text-emerald-100"
+          >
+            Interactive Sanctuary
+          </button>
+          <button
+            onclick="switchTab('code')"
+            id="tab-code"
+            class="px-4 py-1.5 rounded-lg text-xs font-bold text-emerald-400/80 hover:text-emerald-100"
+          >
+            Student Code Editor
+          </button>
+        </div>
+        <div id="view-game" class="glass-panel rounded-2xl p-6 min-h-[380px]">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h2 class="text-lg font-bold text-white">Sanctuary Garden Grid</h2>
+              <p class="text-xs text-emerald-300">Pick a tool, then click a tile.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-emerald-300">Seed Bag:</span>
+              <select
+                id="crop-selector"
+                class="bg-[#1b2219] border border-emerald-700 text-emerald-100 text-sm rounded-xl px-3 py-2"
+              ></select>
+            </div>
+          </div>
+          <div class="flex gap-2 mb-4">
+            <button id="tool-plant" onclick="setTool('plant')" class="slot px-3 py-1.5">🌱 Plant</button>
+            <button id="tool-water" onclick="setTool('water')" class="slot px-3 py-1.5">💧 Water</button>
+            <button id="tool-harvest" onclick="setTool('harvest')" class="slot px-3 py-1.5">🧺 Harvest</button>
+            <button id="tool-remove" onclick="setTool('remove')" class="slot px-3 py-1.5">🗑️ Remove</button>
+          </div>
+          <div id="garden-grid" class="grid grid-cols-5 gap-3"></div>
+        </div>
+        <div id="view-code" class="glass-panel rounded-2xl p-6 flex flex-col flex-grow hidden">
+          <h2 class="font-bold mb-3 flex items-center gap-2">
+            <i data-lucide="code" class="w-5 h-5 text-emerald-400"></i>
+            Student Code Editor (Lab)
+          </h2>
+          <select
+            id="topic-selector"
+            onchange="loadTopic()"
+            class="w-full bg-[#1b2219] border border-emerald-700 rounded-xl p-3 mb-4 text-sm"
+          ></select>
+          <textarea
+            id="code-editor"
+            oninput="saveCode()"
+            class="flex-1 min-h-[220px] bg-[#0a0f0a] border border-emerald-800 rounded-xl p-4 code-font text-sm font-medium leading-relaxed"
+            spellcheck="false"
+          ></textarea>
+          <div class="flex items-center justify-between mt-2 text-xs">
+            <span id="save-status" class="text-emerald-400/80"></span>
+            <button onclick="resetTopic()" class="text-emerald-400/80 hover:text-emerald-100 underline">
+              Reset this topic to template
+            </button>
+          </div>
+          <button
+            onclick="runPythonCode()"
+            class="mt-4 bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2"
+          >
+            <i data-lucide="play" class="w-4 h-4"></i> Run Python Code
+          </button>
+          <div
+            id="output-console"
+            class="mt-4 bg-black/70 border border-emerald-900 rounded-xl p-4 text-xs max-h-48 overflow-auto font-mono whitespace-pre-wrap"
+          ></div>
+        </div>
+      </section>
+
+      <!-- RIGHT PANEL -->
+      <section class="lg:col-span-3 flex flex-col gap-4">
+        <div id="water-source-panel" class="glass-panel rounded-2xl p-4">
+          <h3 class="font-bold text-blue-300 mb-3">💧 Water Source</h3>
+          <div class="space-y-4 text-xs">
+            <div>
+              <div class="flex justify-between font-semibold text-blue-200">
+                <span>⛲ Well (Level <span id="well-level">1</span>)</span>
+                <span id="well-yield">+20 L</span>
+              </div>
+              <div class="w-full bg-[#1b2219] h-1.5 rounded-full overflow-hidden mt-1">
+                <div id="well-cooldown-bar" class="bg-blue-400 h-full" style="width: 100%"></div>
+              </div>
+              <div class="flex gap-2 mt-2">
+                <button id="well-pump" onclick="pumpWell()" class="flex-1 bg-blue-700 hover:bg-blue-600 text-white font-bold py-2 rounded-lg">Pump water</button>
+                <button id="well-upgrade" onclick="upgradeWell()" class="px-3 bg-[#2a3825] hover:bg-[#34462e] text-emerald-200 font-bold py-2 rounded-lg border border-emerald-800">Upgrade</button>
+              </div>
+            </div>
+            <div>
+              <div class="flex justify-between font-semibold text-cyan-200">
+                <span>🛢️ Rain Barrel</span>
+                <span id="barrel-text">0 / 100 L</span>
+              </div>
+              <div class="w-full bg-[#1b2219] h-1.5 rounded-full overflow-hidden mt-1">
+                <div id="barrel-bar" class="bg-cyan-400 h-full" style="width: 0%"></div>
+              </div>
+              <button onclick="collectBarrel()" class="mt-2 w-full bg-cyan-800 hover:bg-cyan-700 text-white font-bold py-2 rounded-lg">Collect rainwater</button>
+            </div>
+          </div>
+        </div>
+        <div id="climate-queue-panel" class="glass-panel rounded-2xl p-4">
+          <h3 class="font-bold text-emerald-400 mb-3 flex items-center gap-2">
+            <i data-lucide="cloud-lightning" class="w-4 h-4"></i> Climate Queue (FIFO)
+          </h3>
+          <div id="climate-queue" class="space-y-3 text-sm"></div>
+        </div>
+        <div id="stack-panel" class="glass-panel rounded-2xl p-4 flex-1 flex flex-col">
+          <h3 class="font-bold text-emerald-400 mb-3 flex items-center gap-2">
+            <i data-lucide="history" class="w-4 h-4"></i> Action History (Stack)
+          </h3>
+          <div id="action-stack" class="flex-1 space-y-2 text-sm overflow-auto"></div>
+          <button
+            onclick="triggerUndo()"
+            class="mt-4 w-full bg-[#2a3825] hover:bg-[#34462e] text-emerald-200 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 border border-emerald-800"
+          >
+            <i data-lucide="undo-2" class="w-4 h-4"></i> Undo (Stack Pop)
+          </button>
+        </div>
+      </section>
+    </main>
+    <div class="hills" aria-hidden="true"></div>
+    <div class="ground" aria-hidden="true"></div>
+    <script>
+      // =====================================================================
+      // SEMANTIC VERSIONING (SemVer 2.0.0)
+      // Single source of truth. Do not hard-code the version elsewhere.
+      // MAJOR: breaking change (e.g. changing bridge function names/signatures
+      //        that Python depends on)
+      // MINOR: new backward-compatible feature (e.g. finishing a new topic's code)
+      // PATCH: bug fix or small tweak with no new feature
+      // Use 0.x.y while in development; move to 1.0.0 once all 11 topics are complete.
+      // =====================================================================
+      const APP_VERSION = "0.10.0";
+      let pyodideInstance = null;
+      // gardenPlants[position] = { name, emoji, watered }
+      let gardenPlants = {};
+      let cropInfo = {};                 // name -> { emoji, cost }, filled by the Seed Bag
+      let resources = { water: 0, seeds: 0, energy: 0, hope: 0, coins: 0 };
+      let activeTool = "plant";
+      let fruitStore = {};               // name -> number of fruits stored
+      let seedsRecovered = 0;
+      let cellRefs = [];
+      const WATER_COST = 10;             // litres per watering
+      const MAX_WATERINGS = 3;           // waterings allowed per plant
+      const WATER_BONUS_SECONDS = 5;     // each watering skips this much growing time
+      const DEFAULT_GROW_SECONDS = 25;
+      // Time a crop needs to grow, in seconds (edit these to tune the game)
+      const GROW_SECONDS = { Tomato: 30, Carrot: 20, Corn: 40, Lettuce: 15 };
+      const HARVEST_FRUITS = 2;          // fruits stored per harvest
+      const HARVEST_SEEDS = 2;           // seeds returned to the Seed Inventory per harvest
+      const CELL_BASE =
+        "tile relative overflow-hidden aspect-square flex items-center justify-center text-3xl ";
+      // Display-only list of action labels (populated by Python via pushAction).
+      // No JavaScript game logic.
+      let displayActionHistory = [];
+
+      // =====================================================================
+      // TOPIC TEMPLATES - paste your Python for each topic into the matching entry.
+      // Call the bridge functions from your Python to update the page.
+      // =====================================================================
+      const topicTemplates = {
+        1: {
+          title: "Python OOP + Big O + Stacks",
+          code: `# Topic 1: Python OOP + Big O + Stacks
+# ==== WRITE YOUR CODE HERE ====
+# Use pushAction(action_str) to display history entries.
+# Use updateResources(...) to set resource values.
+`,
+        },
+        2: {
+          title: "Queues & Deques (FIFO Elements)",
+          code: `# Topic 2: Queues & Deques (FIFO Elements)
+# ==== WRITE YOUR CODE HERE ====
+# Use updateClimateQueue(list_of_event_strings) to display the FIFO queue.
+`,
+        },
+        3: {
+          title: "Static/Dynamic Arrays, 2D Lists, & Memory Structures",
+          code: `# Topic 3: Static/Dynamic Arrays, 2D Lists, & Memory Structures
+
+# ==== WRITE YOUR CODE HERE ====
+# Use addPlantToGrid(pos, name) and addPlantsToDropdown(plants) for the garden grid.
+`,
+        },
+        4: {
+          title: "Hierarchical Trees & Traversals",
+          code: `# Topic 4: Hierarchical Trees & Traversals
+# ==== WRITE YOUR CODE HERE ====
+`,
+        },
+        5: {
+          title: "Binary Search Trees (BST) & Node Mutation",
+          code: `# Topic 5: Binary Search Trees (BST) & Node Mutation
+# ==== WRITE YOUR CODE HERE ====
+`,
+        },
+        6: {
+          title: "Hash Tables, Collisions, & Rehashing",
+          code: `# Topic 6: Hash Tables, Collisions, & Rehashing
+# ==== WRITE YOUR CODE HERE ====
+`,
+        },
+        7: {
+          title: "Graph Foundations, Adjacency Matrices/Lists, & DFS/BFS",
+          code: `# Topic 7: Graph Foundations, Adjacency Matrices/Lists, & DFS/BFS
+# ==== WRITE YOUR CODE HERE ====
+`,
+        },
+        8: {
+          title: "Sorting Algorithms (Bubble, Insertion, Selection, Quick, & Merge Sort)",
+          code: `# Topic 8: Sorting Algorithms (Bubble, Insertion, Selection, Quick, & Merge Sort)
+# ==== WRITE YOUR CODE HERE ====
+`,
+        },
+        9: {
+          title: "Searching Algorithms (Linear Search vs. Binary Search)",
+          code: `# Topic 9: Searching Algorithms (Linear Search vs. Binary Search)
+
+# ==== WRITE YOUR CODE HERE ====
+`,
+        },
+        10: {
+          title: "Advanced Strategic Paradigms (Dijkstra's Algorithm & Greedy Patterns)",
+          code: `# Topic 10: Advanced Strategic Paradigms (Dijkstra's Algorithm & Greedy Patterns)
+# ==== WRITE YOUR CODE HERE ====
+`,
+        },
+        11: {
+          title: "Dynamic Programming (DP), Memoization, & Divide-and-Conquer",
+          code: `# Topic 11: Dynamic Programming (DP), Memoization, & Divide-and-Conquer
+# ==== WRITE YOUR CODE HERE ====
+`,
+        },
+      };
+
+      // ---- Helpers ----
+      // Python lists/dicts arrive as proxies; convert them to plain JavaScript values.
+      function toPlain(value) {
+        if (value && typeof value.toJs === "function") {
+          const plain = value.toJs({ dict_converter: Object.fromEntries });
+          if (typeof value.destroy === "function") value.destroy();
+          return plain;
+        }
+        return value;
+      }
+
+      function appendOutput(text, cls) {
+        const consoleEl = document.getElementById("output-console");
+        if (!consoleEl) return;
+        const span = document.createElement("span");
+        if (cls) span.className = cls;
+        span.textContent = text;
+        consoleEl.appendChild(span);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+
+      function setOutput(text, cls) {
+        const consoleEl = document.getElementById("output-console");
+        if (consoleEl) consoleEl.textContent = "";
+        appendOutput(text, cls);
+      }
+
+      async function initPyodide() {
+        if (pyodideInstance) return;
+        setOutput("Loading Python...\n", "text-amber-400");
+        try {
+          pyodideInstance = await loadPyodide();
+          // Bridge functions Python may call (pure display - no game rules)
+          pyodideInstance.globals.set("addPlantToGrid", addPlantToGrid);
+          pyodideInstance.globals.set("updateResources", updateResources);
+          pyodideInstance.globals.set("addPlantsToDropdown", addPlantsToDropdown);
+          pyodideInstance.globals.set("pushAction", pushAction);
+          pyodideInstance.globals.set("updateClimateQueue", updateClimateQueue);
+          pyodideInstance.globals.set("appendOutput", appendOutput);
+          await pyodideInstance.runPythonAsync(`
+import sys
+
+class Console:
+    def write(self, text):
+        if text:
+            appendOutput(text)
+    def flush(self):
+        pass
+
+sys.stdout = Console()
+sys.stderr = Console()
+`);
+          setOutput("Python ready.\n", "text-emerald-400");
+        } catch (err) {
+          pyodideInstance = null;
+          setOutput("Failed to load Python: " + err.message, "text-red-400");
+          throw err;
+        }
+      }
+
+      // ---- Pure display bridges (called from Python) ----
+      // updateClimateQueue(events: list of strings)
+      // Renders the First-In-First-Out climate events. Pass an empty list to clear.
+      function updateClimateQueue(events) {
+        events = toPlain(events);
+        climateQueue = (events || []).map((e) =>
+          typeof e === "string" ? { title: e, detail: "" } : e
+        );
+        renderClimateQueue();
+      }
+
+      function renderClimateQueue() {
+        const container = document.getElementById("climate-queue");
+        container.innerHTML = "";
+        if (!climateQueue.length) {
+          container.textContent = "No climate events yet.";
+          return;
+        }
+        climateQueue.forEach((event) => {
+          const div = document.createElement("div");
+          div.className = "p-3 bg-amber-950/40 border border-amber-900 rounded-xl text-xs";
+          const title = document.createElement("div");
+          title.className = "font-bold text-amber-400";
+          title.textContent = event.title;
+          div.appendChild(title);
+          if (event.detail) {
+            const detail = document.createElement("div");
+            detail.className = "text-emerald-300/80";
+            detail.textContent = event.detail;
+            div.appendChild(detail);
+          }
+          container.appendChild(div);
+        });
+      }
+
+      // =====================================================================
+      // SEASONS & CLIMATE: one climate event per in-game hour
+      // =====================================================================
+      const HOUR_SECONDS = 20;      // real seconds per in-game hour (set to 3600 for a real hour)
+      const DAYS_PER_SEASON = 3;    // in-game days before the season changes
+      const MAX_CLIMATE_QUEUE = 5;  // oldest event leaves first (First-In-First-Out)
+      let gameDay = 1;
+      let gameHour = 6;
+      let climateQueue = [];
+      let resourcesReady = false;   // climate only changes resources after they are unlocked
+
+      function adjustResources(d) {
+        if (!resourcesReady) return;
+        const clamp = (v, max) => Math.max(0, Math.min(max, v));
+        updateResources(
+          clamp(resources.water + (d.water || 0), capOf("water")),
+          clamp(resources.seeds + (d.seeds || 0), capOf("seeds")),
+          clamp(resources.energy + (d.energy || 0), capOf("energy")),
+          clamp(resources.hope + (d.hope || 0), capOf("hope")),
+          Math.max(0, resources.coins + (d.coins || 0))
+        );
+      }
+
+      // Positive ms speeds growing plants up, negative slows them (ready plants are untouched)
+      function shiftGrowth(ms) {
+        Object.values(gardenPlants).forEach((plant) => {
+          if (growthProgress(plant) < 1) plant.plantedAt -= ms;
+        });
+      }
+
+      const SEASONS = [
+        {
+          name: "Spring", icon: "🌸",
+          events: [
+            { title: "Light Rain", icon: "🌦️", detail: "+15 L to the rain barrel", apply() { addRain(15); } },
+            { title: "Warm Sunshine", icon: "🌤️", detail: "Plants grow 3s faster", apply() { shiftGrowth(3000); } },
+            { title: "Pollinators Arrive", icon: "🐝", detail: "+3 community hope", apply() { adjustResources({ hope: 3 }); } },
+            { title: "Gentle Breeze", icon: "🍃", detail: "No effect", apply() {} },
+          ],
+        },
+        {
+          name: "Summer", icon: "☀️",
+          events: [
+            { title: "Heatwave", icon: "🔥", detail: "-20 L water, plants slowed 4s", apply() { adjustResources({ water: -20 }); shiftGrowth(-4000); } },
+            { title: "Clear Skies", icon: "☀️", detail: "+15 Wh solar energy", apply() { adjustResources({ energy: 15 }); } },
+            { title: "Thunderstorm", icon: "⛈️", detail: "+30 L to the rain barrel", apply() { addRain(30); } },
+            { title: "Drought Warning", icon: "🏜️", detail: "-10 L water", apply() { adjustResources({ water: -10 }); } },
+          ],
+        },
+        {
+          name: "Autumn", icon: "🍂",
+          events: [
+            { title: "Cool Rain", icon: "🌧️", detail: "+20 L to the rain barrel", apply() { addRain(20); } },
+            { title: "Harvest Breeze", icon: "🌬️", detail: "Plants grow 4s faster", apply() { shiftGrowth(4000); } },
+            { title: "Windy Day", icon: "💨", detail: "-3 community hope", apply() { adjustResources({ hope: -3 }); } },
+            { title: "Golden Light", icon: "🌇", detail: "+10 Wh solar energy", apply() { adjustResources({ energy: 10 }); } },
+          ],
+        },
+        {
+          name: "Winter", icon: "❄️",
+          events: [
+            { title: "Cold Snap", icon: "🥶", detail: "Plants slowed 6s", apply() { shiftGrowth(-6000); } },
+            { title: "Frost", icon: "🧊", detail: "Plants slowed 8s, -5 community hope", apply() { shiftGrowth(-8000); adjustResources({ hope: -5 }); } },
+            { title: "Clear Cold Day", icon: "🌞", detail: "+5 Wh solar energy", apply() { adjustResources({ energy: 5 }); } },
+            { title: "Snow Melt", icon: "💧", detail: "+10 L to the rain barrel", apply() { addRain(10); } },
+          ],
+        },
+      ];
+
+      function currentSeason() {
+        return SEASONS[Math.floor((gameDay - 1) / DAYS_PER_SEASON) % SEASONS.length];
+      }
+
+      function clockText() {
+        return String(gameHour).padStart(2, "0") + ":00";
+      }
+
+      function skyForHour(h) {
+        if (h >= 21 || h < 5) return "linear-gradient(#0a1020 0%, #131f33 60%, #1e3040 100%)";
+        if (h < 7) return "linear-gradient(#4a5878 0%, #b0775a 70%, #d8b080 100%)";
+        if (h < 17) return "linear-gradient(#6f9db5 0%, #9fc0c8 55%, #c5d9d2 100%)";
+        return "linear-gradient(#44507a 0%, #b06048 65%, #d09060 100%)";
+      }
+
+      function renderClock() {
+        const season = currentSeason();
+        document.body.style.backgroundImage = skyForHour(gameHour);
+        document.getElementById("day-counter").textContent = gameDay;
+        document.getElementById("day-bar").style.width = `${(gameHour / 24) * 100}%`;
+        document.getElementById("season-display").textContent = `${season.icon} ${season.name}`;
+        document.getElementById("clock-display").textContent =
+          clockText() + (gameHour >= 6 && gameHour < 18 ? " ☀️" : " 🌙");
+      }
+
+      function triggerClimateEvent() {
+        const season = currentSeason();
+        const event = season.events[Math.floor(Math.random() * season.events.length)];
+        event.apply();
+        climateQueue.push({
+          title: `${event.icon} ${event.title}`,
+          detail: `Day ${gameDay} ${clockText()} - ${season.name}: ${event.detail}`,
+        });
+        if (climateQueue.length > MAX_CLIMATE_QUEUE) climateQueue.shift();
+        renderClimateQueue();
+        tickGarden();
+      }
+
+      function advanceClock() {
+        const before = currentSeason();
+        gameHour += 1;
+        let newDay = false;
+        if (gameHour >= 24) {
+          gameHour = 0;
+          gameDay += 1;
+          newDay = true;
+        }
+        const after = currentSeason();
+        renderClock();
+        if (newDay) startNewDay(after !== before ? after : null);
+        else if (after !== before) showToast(`Season changed: ${after.icon} ${after.name}`);
+        triggerClimateEvent();
+      }
+
+      // =====================================================================
+      // WATER SOURCE: a well you can pump again and again, and a rain barrel
+      // =====================================================================
+      const WELL_COOLDOWN_MS = 3000;
+      const WELL_BASE_YIELD = 20;
+      const WELL_YIELD_STEP = 5;         // extra litres per well level
+      const WELL_MAX_LEVEL = 5;
+      const WELL_UPGRADE_COST = 50;      // coins, multiplied by the current level
+      const BARREL_MAX = 100;
+      let wellLevel = 1;
+      let wellReadyAt = 0;
+      let barrelLitres = 0;
+
+      function wellYield() {
+        return WELL_BASE_YIELD + (wellLevel - 1) * WELL_YIELD_STEP;
+      }
+
+      function addRain(litres) {
+        barrelLitres = Math.min(BARREL_MAX, barrelLitres + litres);
+        renderWaterSource();
+      }
+
+      function pumpWell() {
+        if (!resourcesReady) return showToast("Run the Activity 1 code to unlock resources first.");
+        if (Date.now() < wellReadyAt) return showToast("The well is still refilling.");
+        if (resources.water >= capOf("water")) return showToast("Water reserves are full.");
+        const gain = Math.min(wellYield(), capOf("water") - resources.water);
+        adjustResources({ water: gain });
+        wellReadyAt = Date.now() + WELL_COOLDOWN_MS;
+        pushAction(`Pumped ${gain} L from the well`);
+        renderWaterSource();
+      }
+
+      function upgradeWell() {
+        if (!resourcesReady) return showToast("Run the Activity 1 code to unlock resources first.");
+        if (wellLevel >= WELL_MAX_LEVEL) return showToast("The well is at its maximum level.");
+        const cost = WELL_UPGRADE_COST * wellLevel;
+        if (resources.coins < cost) return showToast(`Upgrade costs ${cost} coins.`);
+        adjustResources({ coins: -cost });
+        wellLevel += 1;
+        pushAction(`Upgraded the well to level ${wellLevel}`);
+        renderWaterSource();
+      }
+
+      function collectBarrel() {
+        if (!resourcesReady) return showToast("Run the Activity 1 code to unlock resources first.");
+        if (barrelLitres <= 0) return showToast("The rain barrel is empty.");
+        const space = capOf("water") - resources.water;
+        if (space <= 0) return showToast("Water reserves are full.");
+        const take = Math.min(barrelLitres, space);
+        barrelLitres -= take;
+        adjustResources({ water: take });
+        pushAction(`Collected ${take} L of rainwater`);
+        renderWaterSource();
+      }
+
+      function renderWaterSource() {
+        const remaining = Math.max(0, wellReadyAt - Date.now());
+        document.getElementById("well-cooldown-bar").style.width =
+          `${100 - (remaining / WELL_COOLDOWN_MS) * 100}%`;
+        document.getElementById("well-level").textContent = wellLevel;
+        document.getElementById("well-yield").textContent = `+${wellYield()} L per pump`;
+        const pump = document.getElementById("well-pump");
+        pump.disabled = remaining > 0;
+        pump.classList.toggle("opacity-50", remaining > 0);
+        const upgrade = document.getElementById("well-upgrade");
+        upgrade.textContent =
+          wellLevel >= WELL_MAX_LEVEL ? "Max" : `Upgrade (${WELL_UPGRADE_COST * wellLevel}c)`;
+        document.getElementById("barrel-text").textContent = `${barrelLitres} / ${BARREL_MAX} L`;
+        document.getElementById("barrel-bar").style.width = `${(barrelLitres / BARREL_MAX) * 100}%`;
+      }
+
+      // =====================================================================
+      // RESOURCE UPGRADES: each level raises that resource's storage capacity
+      // =====================================================================
+      const RESOURCE_UPGRADES = {
+        water:  { label: "Water Reserves", base: 200, step: 50, cost: 60 },
+        seeds:  { label: "Seed Inventory", base: 100, step: 25, cost: 50 },
+        energy: { label: "Solar Energy",   base: 120, step: 30, cost: 70 },
+        hope:   { label: "Community Hope", base: 100, step: 25, cost: 80 },
+      };
+      const RESOURCE_MAX_LEVEL = 5;
+      let resourceLevels = { water: 1, seeds: 1, energy: 1, hope: 1 };
+
+      function capOf(key) {
+        const u = RESOURCE_UPGRADES[key];
+        return u.base + (resourceLevels[key] - 1) * u.step;
+      }
+
+      function upgradeResource(key) {
+        if (!resourcesReady) return showToast("Run the Activity 1 code to unlock resources first.");
+        const u = RESOURCE_UPGRADES[key];
+        const level = resourceLevels[key];
+        if (level >= RESOURCE_MAX_LEVEL) return showToast(`${u.label} is at its maximum level.`);
+        const cost = u.cost * level;
+        if (resources.coins < cost) return showToast(`Upgrade costs ${cost} coins.`);
+        resourceLevels[key] = level + 1;
+        adjustResources({ coins: -cost });
+        pushAction(`Upgraded ${u.label} to level ${level + 1}`);
+        showToast(`${u.label} capacity is now ${capOf(key)}.`);
+        renderUpgradeButtons();
+      }
+
+      function renderUpgradeButtons() {
+        Object.keys(RESOURCE_UPGRADES).forEach((key) => {
+          const u = RESOURCE_UPGRADES[key];
+          const level = resourceLevels[key];
+          const btn = document.getElementById("upgrade-" + key);
+          if (level >= RESOURCE_MAX_LEVEL) {
+            btn.textContent = `Lv${level} MAX`;
+            btn.title = `${u.label} is at its maximum level`;
+          } else {
+            btn.textContent = `Lv${level} ▲`;
+            btn.title = `Upgrade ${u.label}: +${u.step} capacity for ${u.cost * level} coins`;
+          }
+        });
+      }
+
+      // =====================================================================
+      // STEWARDSHIP SCORE (SDG 2, 13, 15), 0 to 100%
+      //   Zero Hunger     40%: fruits harvested toward HARVEST_GOAL
+      //   Life on Land    30%: how many of the 25 tiles have a plant
+      //   Climate Action  30%: community hope (20%) and water security (10%)
+      // =====================================================================
+      const HARVEST_GOAL = 20;           // fruits needed for the full hunger score
+      const HARVEST_HOPE = 2;            // community hope gained per harvest
+      let totalHarvested = 0;
+
+      function computeScore() {
+        const planted = Object.keys(gardenPlants).length;
+        const hunger = Math.min(1, totalHarvested / HARVEST_GOAL) * 40;
+        const land = (planted / 25) * 30;
+        const hope = (resources.hope / capOf("hope")) * 20;
+        const water = (resources.water / capOf("water")) * 10;
+        return { hunger, land, hope, water, total: Math.round(hunger + land + hope + water) };
+      }
+
+      function renderScore() {
+        const sc = computeScore();
+        const el = document.getElementById("stewardship-counter");
+        el.textContent = `${sc.total}%`;
+        el.parentElement.title =
+          `Zero Hunger (harvest): ${Math.round(sc.hunger)} / 40\n` +
+          `Life on Land (planted tiles): ${Math.round(sc.land)} / 30\n` +
+          `Climate Action (hope): ${Math.round(sc.hope)} / 20\n` +
+          `Climate Action (water security): ${Math.round(sc.water)} / 10`;
+      }
+
+      // A new day brings community support coins (more when hope is high)
+      function startNewDay(newSeason) {
+        let msg = `Day ${gameDay} begins.`;
+        if (resourcesReady) {
+          const income = 10 + Math.floor(resources.hope / 10);
+          adjustResources({ coins: income });
+          msg += ` Community support: +${income} coins.`;
+        }
+        if (newSeason) msg += ` Season: ${newSeason.icon} ${newSeason.name}.`;
+        showToast(msg);
+      }
+
+      // addPlantToGrid(pos: int 0-24, name: str)
+      // Marks a grid cell as planted (display only).
+      function addPlantToGrid(pos, name) {
+        const info = cropInfo[name];
+        gardenPlants[pos] = { name, emoji: info ? info.emoji : "🌱", watered: 0, plantedAt: Date.now() };
+        renderGarden();
+      }
+
+      function growMs(plant) {
+        return (GROW_SECONDS[plant.name] || DEFAULT_GROW_SECONDS) * 1000;
+      }
+
+      // 0 (just planted) to 1 (ready to harvest)
+      function growthProgress(plant) {
+        const elapsed = Date.now() - plant.plantedAt + plant.watered * WATER_BONUS_SECONDS * 1000;
+        return Math.max(0, Math.min(1, elapsed / growMs(plant)));
+      }
+
+      function renderGarden() {
+        const grid = document.getElementById("garden-grid");
+        grid.innerHTML = "";
+        cellRefs = [];
+        for (let i = 0; i < 25; i++) {
+          const cell = document.createElement("button");
+          cell.type = "button";
+          const emoji = document.createElement("span");
+          const badge = document.createElement("span");
+          badge.className = "badge absolute bottom-1.5 right-1 font-bold text-cyan-300";
+          const bar = document.createElement("div");
+          cell.append(emoji, badge, bar);
+          cell.onclick = () => handleTileClick(i);
+          grid.appendChild(cell);
+          cellRefs.push({ cell, emoji, badge, bar });
+        }
+        tickGarden();
+      }
+
+      // Updates timers and growth stages in place (runs twice a second)
+      function tickGarden() {
+        for (let i = 0; i < cellRefs.length; i++) {
+          const r = cellRefs[i];
+          const plant = gardenPlants[i];
+          if (!plant) {
+            r.cell.className = CELL_BASE + "tile-empty";
+            r.cell.title = "Empty soil";
+            r.emoji.textContent = "⬜";
+            r.badge.textContent = "";
+            r.bar.className = "absolute bottom-0 left-0 h-1";
+            r.bar.style.width = "0%";
+            continue;
+          }
+          const progress = growthProgress(plant);
+          const ready = progress >= 1;
+          const secondsLeft = Math.ceil((growMs(plant) * (1 - progress)) / 1000);
+          r.cell.className =
+            CELL_BASE + (ready ? "tile-ready" : "tile-planted");
+          r.cell.title = ready
+            ? `${plant.name}: ready to harvest`
+            : `${plant.name}: ${secondsLeft}s left (watered ${plant.watered}/${MAX_WATERINGS})`;
+          r.emoji.textContent = ready ? plant.emoji : progress >= 0.5 ? "🌿" : "🌱";
+          r.badge.textContent = ready ? "Ready!" : `💧${plant.watered} ${secondsLeft}s`;
+          r.bar.className =
+            "absolute bottom-0 left-0 h-1 " + (ready ? "bg-amber-400" : "bg-emerald-400");
+          r.bar.style.width = `${progress * 100}%`;
+        }
+      }
+
+      function renderStorage() {
+        const box = document.getElementById("fruit-storage");
+        box.innerHTML = "";
+        const names = Object.keys(fruitStore);
+        if (!names.length) {
+          box.textContent = "Nothing harvested yet.";
+        }
+        names.forEach((name) => {
+          const row = document.createElement("div");
+          row.className = "flex justify-between text-emerald-100";
+          const emoji = cropInfo[name] ? cropInfo[name].emoji : "🍎";
+          const left = document.createElement("span");
+          left.textContent = `${emoji} ${name}`;
+          const right = document.createElement("span");
+          right.textContent = `x ${fruitStore[name]}`;
+          row.append(left, right);
+          box.appendChild(row);
+        });
+        document.getElementById("seeds-recovered").textContent = seedsRecovered;
+      }
+
+      function setTool(tool) {
+        activeTool = tool;
+        ["plant", "water", "harvest", "remove"].forEach((t) => {
+          const btn = document.getElementById("tool-" + t);
+          const on = t === tool;
+          btn.classList.toggle("slot-active", on);
+        });
+      }
+
+      function handleTileClick(i) {
+        const plant = gardenPlants[i];
+        if (activeTool === "plant") {
+          if (plant) return showToast("That tile already has a plant.");
+          const name = document.getElementById("crop-selector").value;
+          const info = cropInfo[name];
+          if (!name || !info) return showToast("Seed Bag is empty. Run the Activity 1 code to fill it.");
+          if (resources.seeds < 1) return showToast("No seeds left.");
+          if (resources.coins < info.cost) return showToast("Not enough coins.");
+          gardenPlants[i] = { name, emoji: info.emoji, watered: 0, plantedAt: Date.now() };
+          updateResources(resources.water, resources.seeds - 1, resources.energy, resources.hope, resources.coins - info.cost);
+          pushAction(`Planted ${name} at tile ${i}`);
+        } else if (activeTool === "water") {
+          if (!plant) return showToast("Nothing to water here.");
+          if (growthProgress(plant) >= 1) return showToast(`${plant.name} is ready to harvest.`);
+          if (plant.watered >= MAX_WATERINGS) return showToast("Already watered the maximum number of times.");
+          if (resources.water < WATER_COST) return showToast("Not enough water.");
+          plant.watered += 1;
+          updateResources(resources.water - WATER_COST, resources.seeds, resources.energy, resources.hope, resources.coins);
+          pushAction(`Watered ${plant.name} at tile ${i}`);
+        } else if (activeTool === "harvest") {
+          if (!plant) return showToast("Nothing to harvest here.");
+          if (growthProgress(plant) < 1) return showToast(`${plant.name} is not ready yet.`);
+          fruitStore[plant.name] = (fruitStore[plant.name] || 0) + HARVEST_FRUITS;
+          const gained = Math.max(0, Math.min(HARVEST_SEEDS, capOf("seeds") - resources.seeds));
+          seedsRecovered += gained;
+          totalHarvested += HARVEST_FRUITS;
+          updateResources(resources.water, resources.seeds + gained, resources.energy, Math.min(capOf("hope"), resources.hope + HARVEST_HOPE), resources.coins);
+          delete gardenPlants[i];
+          pushAction(`Harvested ${plant.name} at tile ${i}`);
+          showToast(`Harvested ${HARVEST_FRUITS} ${plant.emoji} and ${gained} seeds`);
+          renderStorage();
+        } else {
+          if (!plant) return showToast("Nothing to remove here.");
+          delete gardenPlants[i];
+          pushAction(`Removed ${plant.name} at tile ${i}`);
+        }
+        renderGarden();
+      }
+
+      // updateResources(water, seeds, energy, hope, coins)
+      // Or pass a single dictionary: updateResources({"water": n, "seeds": n, ...})
+      // No fallbacks that turn a valid 0 into a default. Caps used only for bar width.
+      function updateResources(water, seeds, energy, hope, coins) {
+        water = toPlain(water);
+        if (typeof water === "object" && water !== null) {
+          const args = water;
+          water = args.water;
+          seeds = args.seeds;
+          energy = args.energy;
+          hope = args.hope;
+          coins = args.coins;
+        }
+        water = water !== undefined ? water : 0;
+        seeds = seeds !== undefined ? seeds : 0;
+        energy = energy !== undefined ? energy : 0;
+        hope = hope !== undefined ? hope : 0;
+        coins = coins !== undefined ? coins : 0;
+
+        resources = { water, seeds, energy, hope, coins };
+        resourcesReady = true;
+        const waterMax = capOf("water"), seedsMax = capOf("seeds"), energyMax = capOf("energy"), hopeMax = capOf("hope");
+        const pct = (value, max) => `${Math.max(0, Math.min(100, (value / max) * 100))}%`;
+        document.getElementById("water-text").innerText = `${water} / ${waterMax} L`;
+        document.getElementById("water-bar").style.width = pct(water, waterMax);
+        document.getElementById("seeds-text").innerText = `${seeds} / ${seedsMax}`;
+        document.getElementById("seeds-bar").style.width = pct(seeds, seedsMax);
+        document.getElementById("energy-text").innerText = `${energy} / ${energyMax} Wh`;
+        document.getElementById("energy-bar").style.width = pct(energy, energyMax);
+        document.getElementById("hope-text").innerText = `${hope} / ${hopeMax}`;
+        document.getElementById("hope-bar").style.width = pct(hope, hopeMax);
+        document.getElementById("coins-text").innerText = `${coins} Coins`;
+      }
+
+      // addPlantsToDropdown(plants: list of [name, emoji, cost])
+      function addPlantsToDropdown(plants) {
+        plants = toPlain(plants);
+        const select = document.getElementById("crop-selector");
+        select.innerHTML = "";
+        cropInfo = {};
+        if (!plants) return;
+        plants.forEach(([name, emoji, cost]) => {
+          cropInfo[name] = { emoji, cost };
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = `${emoji} ${name} (${cost}c)`;
+          select.appendChild(option);
+        });
+      }
+
+      // pushAction(action: str)
+      // Appends a display label to the Action History panel (no undo logic here).
+      function pushAction(action) {
+        displayActionHistory.push(action);
+        if (displayActionHistory.length > 8) displayActionHistory.shift();
+        renderActionStack();
+      }
+
+      function renderActionStack() {
+        const container = document.getElementById("action-stack");
+        container.innerHTML = "";
+        [...displayActionHistory].reverse().forEach((act) => {
+          const div = document.createElement("div");
+          div.className =
+            "bg-emerald-950/60 border-l-2 border-amber-500 px-3 py-2 rounded text-xs text-emerald-100";
+          div.textContent = `→ ${act}`;
+          container.appendChild(div);
+        });
+      }
+
+      // Display only: removes the last displayed label. Your Python owns the real stack.
+      function triggerUndo() {
+        if (displayActionHistory.length > 0) {
+          const undone = displayActionHistory.pop();
+          renderActionStack();
+          showToast(`Undid: ${undone}`);
+        } else {
+          showToast("Stack is empty.");
+        }
+      }
+
+      function showToast(msg) {
+        const toast = document.createElement("div");
+        toast.className =
+          "fixed bottom-6 right-6 bg-emerald-900 border border-emerald-400 text-white px-5 py-3 rounded-2xl shadow-2xl z-50 text-sm";
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2500);
+      }
+
+      async function runPythonCode() {
+        setOutput("Running...\n", "text-amber-400");
+        try {
+          await initPyodide();
+          setOutput("");
+          const code = document.getElementById("code-editor").value;
+          await pyodideInstance.runPythonAsync(code);
+        } catch (err) {
+          appendOutput("\nError: " + err.message, "text-red-400");
+        }
+      }
+
+      // ---- Saving (browser storage, one entry per topic) ----
+      const CODE_KEY_PREFIX = "garden-sim-code-";
+      const TOPIC_KEY = "garden-sim-topic";
+
+      function storageGet(key) {
+        try {
+          return localStorage.getItem(key);
+        } catch (err) {
+          return null;
+        }
+      }
+
+      function storageSet(key, value) {
+        try {
+          localStorage.setItem(key, value);
+          return true;
+        } catch (err) {
+          return false;
+        }
+      }
+
+      function setSaveStatus(text) {
+        document.getElementById("save-status").textContent = text;
+      }
+
+      function saveCode() {
+        const key = document.getElementById("topic-selector").value;
+        const code = document.getElementById("code-editor").value;
+        if (!code.trim()) {
+          try {
+            localStorage.removeItem(CODE_KEY_PREFIX + key);
+          } catch (err) {}
+          setSaveStatus("Empty - the template will return on reload");
+          return;
+        }
+        const ok = storageSet(CODE_KEY_PREFIX + key, code);
+        setSaveStatus(ok ? "Saved" : "Could not save (browser storage unavailable)");
+      }
+
+      function loadTopic() {
+        const key = document.getElementById("topic-selector").value;
+        storageSet(TOPIC_KEY, key);
+        const stored = storageGet(CODE_KEY_PREFIX + key);
+        const saved = stored !== null && stored.trim() ? stored : null;
+        document.getElementById("code-editor").value =
+          saved !== null ? saved : topicTemplates[key].code;
+        setSaveStatus(saved !== null ? "Restored your saved code" : "");
+      }
+
+      function resetTopic() {
+        const key = document.getElementById("topic-selector").value;
+        if (!confirm("Replace your code for this topic with the original template?")) return;
+        try {
+          localStorage.removeItem(CODE_KEY_PREFIX + key);
+        } catch (err) {}
+        document.getElementById("code-editor").value = topicTemplates[key].code;
+        setSaveStatus("Reset to template");
+      }
+
+      function switchTab(tab) {
+        const isGame = tab === "game";
+        document.getElementById("view-game").classList.toggle("hidden", !isGame);
+        document.getElementById("view-code").classList.toggle("hidden", isGame);
+        const gameBtn = document.getElementById("tab-game");
+        const codeBtn = document.getElementById("tab-code");
+        gameBtn.classList.toggle("bg-[#283623]", isGame);
+        gameBtn.classList.toggle("text-emerald-100", isGame);
+        gameBtn.classList.toggle("text-emerald-400/80", !isGame);
+        codeBtn.classList.toggle("bg-[#283623]", !isGame);
+        codeBtn.classList.toggle("text-emerald-100", !isGame);
+        codeBtn.classList.toggle("text-emerald-400/80", isGame);
+      }
+
+      window.onload = () => {
+        document.getElementById("version-badge").textContent = "v" + APP_VERSION;
+        lucide.createIcons();
+        renderGarden();
+        renderActionStack();
+        // Resources stay at 0 until your Python calls updateResources(...)
+        updateResources(0, 0, 0, 0, 0);
+        resourcesReady = false;
+        renderClock();
+        renderClimateQueue();
+        setInterval(advanceClock, HOUR_SECONDS * 1000);
+        renderWaterSource();
+        setInterval(renderWaterSource, 250);
+        const select = document.getElementById("topic-selector");
+        Object.keys(topicTemplates).forEach((k) => {
+          const opt = document.createElement("option");
+          opt.value = k;
+          opt.textContent = topicTemplates[k].title;
+          select.appendChild(opt);
+        });
+        const lastTopic = storageGet(TOPIC_KEY);
+        if (lastTopic && topicTemplates[lastTopic]) select.value = lastTopic;
+        loadTopic();
+        switchTab("game");
+        setTool("plant");
+        renderStorage();
+        renderUpgradeButtons();
+        renderScore();
+        setInterval(() => {
+          tickGarden();
+          renderScore();
+        }, 500);
+        // Pre-load Pyodide in the background so the first run is faster
+        initPyodide().catch(() => {});
+      };
+    </script>
+  </body>
+</html>
